@@ -1,0 +1,73 @@
+name: Deploy Claude Central
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'command/**'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual deploy'
+        required: false
+        default: 'Manual trigger'
+
+jobs:
+  deploy:
+    name: Deploy to command.digitalmaster.no
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DIGITALMASTER_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "SSH key installed."
+
+      - name: Add server to known hosts
+        run: |
+          ssh-keyscan -H 46.250.221.12 >> ~/.ssh/known_hosts
+          echo "Server fingerprint added to known_hosts."
+
+      - name: Deploy files via SCP
+        run: |
+          scp -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=yes \
+            command/config.php \
+            command/api.php \
+            command/index.php \
+            semenvoi@46.250.221.12:/home/semenvoi/command.digitalmaster.no/
+          echo "Files uploaded."
+
+      - name: Verify deployment via health check
+        run: |
+          echo "Waiting for server to settle..."
+          sleep 3
+          HEALTH=$(curl -sf --max-time 10 "https://command.digitalmaster.no/api.php?action=health" || echo '{"ok":false,"error":"curl failed"}')
+          echo "Health response: $HEALTH"
+          echo "$HEALTH" | grep '"ok":true' > /dev/null || {
+            echo "Health check FAILED. Response was: $HEALTH"
+            exit 1
+          }
+          echo "Health check passed."
+
+      - name: Report success
+        if: success()
+        run: |
+          echo "Deployed successfully to command.digitalmaster.no"
+          echo "Commit: ${{ github.sha }}"
+          echo "Triggered by: ${{ github.actor }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Reason: ${{ github.event.inputs.reason }}"
+          fi
+
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "DEPLOY FAILED for commit ${{ github.sha }}"
+          echo "Check the logs above for the failing step."

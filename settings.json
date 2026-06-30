@@ -1,0 +1,186 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Read",
+      "Edit",
+      "Write",
+      "Grep",
+      "Glob",
+      "Agent",
+      "TodoWrite",
+      "WebFetch",
+      "WebSearch",
+      "mcp__memory__*",
+      "mcp__sequential-thinking__*",
+      "mcp__filesystem__*",
+      "mcp__fetch__fetch",
+      "mcp__playwright__*",
+      "mcp__github__*",
+      "mcp__puppeteer__*",
+      "mcp__context7__*",
+      "mcp__figma__*",
+      "mcp__chrome-devtools__*",
+      "mcp__lighthouse__*",
+      "PowerShell(*)",
+      "Skill(update-config)",
+      "Skill(update-config:*)"
+    ],
+    "defaultMode": "bypassPermissions",
+    "additionalDirectories": [
+      "C:\\Users\\aaa\\.claude",
+      "D:\\semeny2\\.claude"
+    ]
+  },
+  "model": "claude-opus-4-8",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node C:\\Users\\aaa\\.claude\\session-start.js",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NonInteractive -File \"C:\\Users\\aaa\\.claude\\send-compact.ps1\"",
+            "shell": "powershell",
+            "timeout": 8,
+            "async": true
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node C:\\Users\\aaa\\.claude\\session-update.js",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node C:\\Users\\aaa\\.claude\\log-prompt.js",
+            "timeout": 8
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NonInteractive -File \"C:\\Users\\aaa\\.claude\\send-stop.ps1\"",
+            "shell": "powershell",
+            "timeout": 8,
+            "async": true
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node C:\\Users\\aaa\\.claude\\session-end.js",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node C:\\Users\\aaa\\.claude\\log-response.js",
+            "timeout": 10,
+            "async": true
+          }
+        ]
+      }
+    ]
+  },
+  "effortLevel": "xhigh",
+  "mcpServers": {
+    "memory": {
+      "command": "node",
+      "args": [
+        "C:\\Users\\aaa\\AppData\\Roaming\\npm\\node_modules\\@modelcontextprotocol\\server-memory\\dist\\index.js"
+      ]
+    },
+    "sequential-thinking": {
+      "command": "node",
+      "args": [
+        "C:\\Users\\aaa\\AppData\\Roaming\\npm\\node_modules\\@modelcontextprotocol\\server-sequential-thinking\\dist\\index.js"
+      ]
+    },
+    "filesystem": {
+      "command": "node",
+      "args": [
+        "C:\\Users\\aaa\\AppData\\Roaming\\npm\\node_modules\\@modelcontextprotocol\\server-filesystem\\dist\\index.js",
+        "C:\\Users\\aaa"
+      ]
+    },
+    "fetch": {
+      "command": "node",
+      "args": [
+        "C:\\Users\\aaa\\AppData\\Roaming\\npm\\node_modules\\mcp-server-fetch\\index.js"
+      ]
+    },
+    "playwright": {
+      "command": "node",
+      "args": [
+        "C:\\Users\\aaa\\AppData\\Roaming\\npm\\node_modules\\@playwright\\mcp\\cli.js"
+      ]
+    },
+    "github": {
+      "command": "node",
+      "args": [
+        "C:\\Users\\aaa\\AppData\\Roaming\\npm\\node_modules\\@modelcontextprotocol\\server-github\\dist\\index.js"
+      ],
+      "env": {
+        "GITHUB_TOKEN": "YOUR_GITHUB_TOKEN_HERE"
+      }
+    },
+    "puppeteer": {
+      "command": "node",
+      "args": [
+        "C:\\Users\\aaa\\AppData\\Roaming\\npm\\node_modules\\@modelcontextprotocol\\server-puppeteer\\dist\\index.js"
+      ]
+    },
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp@latest"
+      ]
+    },
+    "figma": {
+      "type": "http",
+      "url": "https://mcp.figma.com/mcp"
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "chrome-devtools-mcp@latest"
+      ]
+    },
+    "lighthouse": {
+      "command": "npx",
+      "args": [
+        "lighthouse-mcp"
+      ]
+    }
+  }
+}

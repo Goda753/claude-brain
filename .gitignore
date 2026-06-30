@@ -1,0 +1,32 @@
+# Secrets and personal state
+central-agent-session.json
+chat-session-*.json
+brain-cache.json
+*.log
+.env
+.credentials.json
+mcp-needs-auth-cache.json
+.last-cleanup
+
+# Node
+node_modules/
+
+# Local overrides
+settings.local.json
+
+# Per-project state (machine-specific)
+projects/
+sessions/
+session-env/
+shell-snapshots/
+file-history/
+cache/
+backups/
+plans/
+ide/
+plugins/
+
+# Watchdog log
+watchdog.log
+agent.log
+agent-err.log
