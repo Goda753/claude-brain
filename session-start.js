@@ -3,14 +3,6 @@
  * Claude Central SessionStart hook
  * Called automatically at the start of every Claude Code session.
  * Registers with Central, fetches context, injects into Claude via stdout.
- *
- * Features:
- * - Stream-based stdin (Windows-safe, no /dev/stdin)
- * - Global brain injection (is_global=1, project_slug='global', brain_type='global')
- * - Project context brain cards (projectSlug-context and projectSlug-sessions)
- * - Recent chat sessions summary (last 3 sessions for this machine)
- * - All fetches run in parallel via Promise.all
- * - Silent failure on any error — never blocks Claude from starting
  */
 'use strict';
 
@@ -20,7 +12,7 @@ const path   = require('path');
 const fs     = require('fs');
 const crypto = require('crypto');
 
-const API_KEY  = 'cc_live_ac738c34d1470925ffbe15ddc7e854a7e9a0b6874099a805';
+const API_KEY = 'cc_live_ac738c34d1470925ffbe15ddc7e854a7e9a0b6874099a805';
 const API_HOST = 'command.digitalmaster.no';
 const MACHINE  = process.env.COMPUTERNAME === 'MAC' ? 'mac' :
                  (process.platform === 'darwin' ? 'mac' : 'windows-pc');
@@ -71,22 +63,20 @@ function apiPost(action, body) {
   });
 }
 
-// Windows-safe stream-based stdin reader (avoids /dev/stdin which doesn't exist on Windows)
+// Windows-safe stdin reader (avoids /dev/stdin which doesn't exist on Windows)
 function readStdin() {
   return new Promise(resolve => {
     if (process.stdin.isTTY) { resolve('{}'); return; }
     let d = '';
-    process.stdin.setEncoding('utf8');
     process.stdin.on('data', c => d += c);
     process.stdin.on('end', () => resolve(d || '{}'));
     process.stdin.on('error', () => resolve('{}'));
-    // Safety timeout — resolve after 3s even if stream never ends
     setTimeout(() => resolve(d || '{}'), 3000);
   });
 }
 
 async function main() {
-  // Read hook input from stdin (stream-based, Windows-safe)
+  // Read hook input from stdin (Windows-safe)
   let hookInput = {};
   try {
     const raw = await readStdin();
@@ -111,24 +101,15 @@ async function main() {
 
   // Detect current project from CWD
   const cwd = process.cwd();
-  const projectSlug = path.basename(cwd);
+  const projectGuess = path.basename(cwd);
 
-  // Register with Central and fetch ALL context in parallel
-  const [
-    regResult,
-    brains,
-    devices,
-    notifications,
-    quickCmds,
-    kpis,
-    cmdHistory,
-    recentSessions,
-  ] = await Promise.all([
+  // Register with Central and get all context in parallel
+  const [regResult, brains, devices, notifications, quickCmds, kpis, cmdHistory] = await Promise.all([
     apiPost('session_start', {
       session_id: sessionId,
       machine: MACHINE,
       label: MACHINE + ' Claude',
-      project: projectSlug,
+      project: projectGuess,
       cwd: cwd,
     }),
     apiGet('brain_get'),
@@ -137,93 +118,44 @@ async function main() {
     apiGet('quick_commands'),
     apiGet('kpis'),
     apiGet('command_history?limit=5'),
-    apiGet(`chat_sessions&limit=3&machine=${MACHINE}`),
   ]);
 
-  // --- Brain categorisation ---
+  // Separate global brains from project-specific brains
+  const globalBrains = Array.isArray(brains)
+    ? brains.filter(b => b.is_global == 1 || b.project_slug === 'global' || b.brain_type === 'global')
+    : [];
+  const projectBrain = Array.isArray(brains)
+    ? brains.find(b => b.project_slug === projectGuess && !b.is_global)
+    : null;
 
-  // Global brains: injected on every machine in every session
-  const globalBrains = Array.isArray(brains) ? brains.filter(b =>
-    b.is_global == 1 || b.project_slug === 'global' || b.brain_type === 'global'
-  ) : [];
-
-  // Project brain (general, not context/sessions)
-  const projectBrain = Array.isArray(brains) ? brains.find(b =>
-    b.project_slug === projectSlug && !b.is_global && b.brain_type !== 'context' && b.brain_type !== 'sessions'
-  ) : null;
-
-  // Project context cards: type 'context' or 'sessions' for this project
-  const projectContextCards = Array.isArray(brains) ? brains.filter(b =>
-    b.project_slug === projectSlug &&
-    (b.brain_type === 'context' || b.brain_type === 'sessions')
-  ) : [];
-
-  // ---- Build context sections in priority order ----
+  // Build context sections
   const sections = [];
 
-  // 1. Header (machine / session / project / dashboard link)
-  sections.push(
-    `> Machine: **${MACHINE}** | Session: \`${sessionId.slice(0, 16)}…\` | Project: **${projectSlug}**\n` +
-    `> Dashboard: https://command.digitalmaster.no`
-  );
+  // Header line
+  sections.push(`> Machine: **${MACHINE}** | Session: \`${sessionId.slice(0,16)}…\` | Project: **${projectGuess}**\n> Dashboard: https://command.digitalmaster.no`);
 
-  // 2. Handoff from Central (work to pick up — high priority)
-  if (regResult?.handoff) {
-    sections.push('## Handoff from Central — Pick This Up\n' + regResult.handoff);
-  }
-
-  // 3. Global brain cards (rules, turbo, coordination — most important, every session)
+  // Global brain cards — injected into EVERY session on EVERY machine
   if (globalBrains.length) {
     const globalContent = globalBrains
       .filter(b => b.brain_content || b.content)
-      .map(b =>
-        `### ${b.brain_name || b.project_slug}\n` +
-        `${(b.brain_content || b.content || '').substring(0, 3000)}`
-      )
+      .map(b => `### ${b.brain_name || b.project_slug}\n${(b.brain_content || b.content || '').substring(0, 3000)}`)
       .join('\n\n---\n\n');
     if (globalContent) {
       sections.push('## Claude Central Brain — Global Rules\n\n' + globalContent);
     }
   }
 
-  // 4. Project context cards (what was done in this project recently)
-  if (projectContextCards.length) {
-    projectContextCards.forEach(card => {
-      if (card.brain_content || card.content) {
-        sections.push(
-          `## ${card.brain_name || 'Project Context'}\n` +
-          `${(card.brain_content || card.content || '').substring(0, 2000)}`
-        );
-      }
-    });
+  // Handoff from Central (work to pick up)
+  if (regResult?.handoff) {
+    sections.push('## Handoff from Central — Pick This Up\n' + regResult.handoff);
   }
 
-  // 5. Recent chat sessions (last 3 for this machine, excluding current session)
-  if (Array.isArray(recentSessions) && recentSessions.length) {
-    const recentWork = recentSessions
-      .filter(s => s.session_id !== sessionId)
-      .slice(0, 3)
-      .map(s => {
-        const when = s.last_activity
-          ? new Date(s.last_activity).toLocaleDateString('no-NO')
-          : '?';
-        const label = s.window_label || s.session_id.slice(-8);
-        const msgs  = s.message_count || 0;
-        const preview = (s.first_prompt_preview || '').substring(0, 100);
-        return `- **${label}** (${when}, ${msgs} msgs): ${preview}`;
-      })
-      .join('\n');
-    if (recentWork) {
-      sections.push('## Recent Chat Sessions\n' + recentWork);
-    }
-  }
-
-  // 6. Other active sessions (from regResult)
+  // Other active sessions
   if (regResult?.others_context) {
     sections.push(regResult.others_context);
   }
 
-  // 7. Online machines
+  // Devices — show all machines with online status, age, session count
   if (Array.isArray(devices) && devices.length) {
     const onlineMachines = devices.filter(d => d.online);
     const machineList = devices.map(d => {
@@ -236,50 +168,39 @@ async function main() {
     sections.push(`## Online Machines (${onlineMachines.length}/${devices.length})\n${machineList || 'None online'}`);
   }
 
-  // 8. Pending alerts (unread notifications)
+  // Pending alerts (unread notifications)
   const pendingNotifs = Array.isArray(notifications) ? notifications.filter(n => !n.read_at) : [];
   if (pendingNotifs.length) {
-    sections.push(
-      '## Pending Alerts (' + pendingNotifs.length + ')\n' +
-      pendingNotifs.slice(0, 5).map(n =>
-        `- [${n.type || 'alert'}] ${n.title || n.message}: ${(n.body || n.message || '').substring(0, 80)}`
-      ).join('\n')
-    );
+    sections.push('## Pending Alerts (' + pendingNotifs.length + ')\n' +
+      pendingNotifs.slice(0, 5).map(n => `- [${n.type || 'alert'}] ${n.title || n.message}: ${(n.body || n.message || '').substring(0, 80)}`).join('\n'));
   }
 
-  // 9. Quick command presets
+  // Quick command presets
   if (Array.isArray(quickCmds) && quickCmds.length) {
-    sections.push(
-      '## Quick Command Presets\n' +
-      quickCmds.slice(0, 8).map(c =>
-        `- **${c.name}**: ${c.cmd_type} → \`${(c.command || '').substring(0, 60)}\``
-      ).join('\n')
-    );
+    sections.push('## Quick Command Presets\n' + quickCmds.slice(0, 8).map(c => `- **${c.name}**: ${c.cmd_type} → \`${(c.command || '').substring(0, 60)}\``).join('\n'));
   }
 
-  // 10. Current KPI metrics
+  // Current KPI metrics
   if (Array.isArray(kpis) && kpis.length) {
     const kpiLine = kpis.map(k => `${k.label || k.metric_key}: ${k.value}`).join(' | ');
     sections.push('## Current Metrics\n' + kpiLine);
   }
 
-  // 11. Recent command history
+  // Recent command history
   if (Array.isArray(cmdHistory) && cmdHistory.length) {
-    sections.push(
-      '## Recent Commands (last 5)\n' +
+    sections.push('## Recent Commands (last 5)\n' +
       cmdHistory.slice(0, 5).map(c => {
         const out = (c.output || '').substring(0, 60).replace(/\n/g, ' ');
         return `- \`${(c.command || c.cmd || '').substring(0, 60)}\` → ${out || '(no output)'}`;
-      }).join('\n')
-    );
+      }).join('\n'));
   }
 
-  // 12. Project brain (general — not context/sessions)
+  // Project brain (most relevant context for current project)
   if (projectBrain?.brain_content || projectBrain?.content) {
     const content = (projectBrain.brain_content || projectBrain.content || '').substring(0, 4000);
     sections.push('## Project Brain: ' + (projectBrain.project_slug || 'general') + '\n' + content);
-  } else if (!globalBrains.length && !projectContextCards.length && Array.isArray(brains) && brains.length) {
-    // Fallback: if no global brains and no project cards, show brains[0]
+  } else if (!globalBrains.length && Array.isArray(brains) && brains.length) {
+    // Fallback: if no global brains and no matching project brain, show brains[0]
     const brain = brains[0];
     const content = (brain.brain_content || brain.content || '').substring(0, 4000);
     if (content) {
@@ -287,7 +208,7 @@ async function main() {
     }
   }
 
-  // 13. Main CLAUDE.md content from Central (if any)
+  // Main CLAUDE.md content from Central
   if (regResult?.claude_md) {
     sections.push(regResult.claude_md.substring(0, 3000));
   }
