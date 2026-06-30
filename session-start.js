@@ -136,11 +136,18 @@ async function main() {
   // Header line
   sections.push(`> Machine: **${MACHINE}** | Session: \`${sessionId.slice(0,16)}…\` | Project: **${projectGuess}**\n> Dashboard: https://command.digitalmaster.no`);
 
-  // Global brain cards — injected into EVERY session on EVERY machine
-  if (globalBrains.length) {
-    const globalContent = globalBrains
+  // SYSTEM ORIENTATION — always injected first so every new session immediately understands the system
+  const orientationCard = globalBrains.find(b => b.brain_name === 'system-orientation');
+  if (orientationCard?.brain_content) {
+    sections.push('## SYSTEM ORIENTATION\n\n' + orientationCard.brain_content.substring(0, 4000));
+  }
+
+  // Remaining global brain cards (skip orientation — already injected above)
+  const otherGlobalBrains = globalBrains.filter(b => b.brain_name !== 'system-orientation');
+  if (otherGlobalBrains.length) {
+    const globalContent = otherGlobalBrains
       .filter(b => b.brain_content || b.content)
-      .map(b => `### ${b.brain_name || b.project_slug}\n${(b.brain_content || b.content || '').substring(0, 3000)}`)
+      .map(b => `### ${b.brain_name || b.project_slug}\n${(b.brain_content || b.content || '').substring(0, 2000)}`)
       .join('\n\n---\n\n');
     if (globalContent) {
       sections.push('## Claude Central Brain — Global Rules\n\n' + globalContent);
