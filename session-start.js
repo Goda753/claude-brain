@@ -104,7 +104,7 @@ async function main() {
   const projectGuess = path.basename(cwd);
 
   // Register with Central and get all context in parallel
-  const [regResult, brains, devices, notifications, quickCmds, kpis, cmdHistory] = await Promise.all([
+  const [regResult, brains, devices, notifications, quickCmds, kpis, cmdHistory, projects] = await Promise.all([
     apiPost('session_start', {
       session_id: sessionId,
       machine: MACHINE,
@@ -118,6 +118,7 @@ async function main() {
     apiGet('quick_commands'),
     apiGet('kpis'),
     apiGet('command_history?limit=5'),
+    apiGet('get_projects'),
   ]);
 
   // Separate global brains from project-specific brains
@@ -179,6 +180,31 @@ async function main() {
   if (Array.isArray(quickCmds) && quickCmds.length) {
     sections.push('## Quick Command Presets\n' + quickCmds.slice(0, 8).map(c => `- **${c.name}**: ${c.cmd_type} → \`${(c.command || '').substring(0, 60)}\``).join('\n'));
   }
+
+  // All projects cheatsheet
+  if (Array.isArray(projects) && projects.length) {
+    const projectLines = projects.map(p => {
+      const parts = [`${p.icon || '📁'} **${p.name}** (\`${p.slug}\`): ${p.description ? p.description.substring(0,80)+'…' : ''}`];
+      if (p.local_path) parts.push(`  Local: ${p.local_path}`);
+      if (p.server_host) parts.push(`  Server: ${p.server_user}@${p.server_host}:${p.server_path}`);
+      return parts.join('\n');
+    }).join('\n\n');
+    sections.push('## Projects — Switch with: `node ~/.claude/switch-project.js <slug>`\n\n' + projectLines);
+  }
+
+  // Active project (set by switch-project.js)
+  const activeProjectPath = path.join(os.homedir(), '.claude', 'active-project.json');
+  try {
+    const activeProject = JSON.parse(fs.readFileSync(activeProjectPath, 'utf8'));
+    if (activeProject?.slug) {
+      sections.push(`## Active Project: ${activeProject.icon||'📁'} ${activeProject.name}\n` +
+        `Slug: \`${activeProject.slug}\`\n` +
+        (activeProject.local_path ? `Local: ${activeProject.local_path}\n` : '') +
+        (activeProject.server_host ? `SSH: ssh -i ${activeProject.ssh_key} ${activeProject.server_user}@${activeProject.server_host}\n` : '') +
+        (activeProject.extra_context ? `Context: ${activeProject.extra_context.substring(0,500)}` : '')
+      );
+    }
+  } catch {}
 
   // Current KPI metrics
   if (Array.isArray(kpis) && kpis.length) {

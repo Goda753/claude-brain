@@ -68,6 +68,50 @@ Plain `turbo` with no number = 4 agents (default).
 - Agents that edit the same file should each write to separate temp files; a final agent assembles
 - Never ask the user to confirm before spawning — turbo is always pre-approved
 
+## Multi-Project Mode — One Chat, All Projects
+
+You can work across ALL projects in a single Claude chat. When the user mentions switching to a different project, or when you detect you need to work on a different project, call the switch script via Bash.
+
+### Project Switch Command
+```bash
+node "C:\Users\aaa\.claude\switch-project.js" <project>
+```
+
+This outputs all credentials, paths, SSH commands, and context for that project. Read the output — it IS the context you need to work on that project.
+
+### Recognized Projects
+
+| Trigger words | Project | Slug |
+|---|---|---|
+| "semeny", "semeny.no", "restaurant", "mat" | Semeny.no | `semeny` |
+| "digitalmaster", "digital master", "dm", "photography" | Digitalmaster.no | `digitalmaster` |
+| "central", "claude central", "command", "brain", "dashboard" | Claude Central | `central` |
+
+### Rules
+1. **Auto-detect project from context**: If user says "fix the semeny checkout", call `switch-project.js semeny` first, then proceed
+2. **Switch before working**: Always switch before editing files/SSHing to ensure logs go to the right project
+3. **List when unsure**: `node ~/.claude/switch-project.js list` shows all projects
+4. **No re-asking**: After switching, you have all creds — don't ask the user for paths or passwords
+5. **Tag learnings**: When adding brain learnings, use the active project slug from `C:\Users\aaa\.claude\active-project.json`
+6. **Same session = same logs**: All work is logged separately per project even though it's one chat
+
+### SSH Quick Reference (after switching, use these)
+- **Semeny**: `ssh -i ~/.ssh/semeny_rsa digitubv@semeny.no`
+- **Digitalmaster/Central**: `ssh -i ~/.ssh/digitalmaster_ed25519 semenvoi@46.250.221.12`
+
+### Multi-Project Session Flow
+```
+User: "fix the login bug on semeny"
+→ Claude: node ~/.claude/switch-project.js semeny  (gets all creds + context)
+→ Claude: ssh -i ~/.ssh/semeny_rsa digitubv@semeny.no "tail logs..."
+→ Claude: fixes the bug, deploys, logs to semeny project
+
+User: "now update the claude central dashboard"
+→ Claude: node ~/.claude/switch-project.js central  (switches context)
+→ Claude: edits E:\My Drive\Digital master\website\command\index.php
+→ Claude: deploys, logs to central project
+```
+
 ## Agent Coordination Rules — How to Split Work Correctly
 
 These rules apply whenever running multiple agents (turbo or otherwise). Violating them causes conflicts, gaps, and incoherent output.
