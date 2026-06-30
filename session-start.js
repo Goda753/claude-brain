@@ -104,7 +104,7 @@ async function main() {
   const projectGuess = path.basename(cwd);
 
   // Register with Central and get all context in parallel
-  const [regResult, brains, devices, notifications, quickCmds, kpis, cmdHistory, projects] = await Promise.all([
+  const [regResult, brains, devices, notifications, quickCmds, kpis, cmdHistory, projects, brainHealth] = await Promise.all([
     apiPost('session_start', {
       session_id: sessionId,
       machine: MACHINE,
@@ -119,6 +119,7 @@ async function main() {
     apiGet('kpis'),
     apiGet('command_history?limit=5'),
     apiGet('get_projects'),
+    apiGet('brain_health'),
   ]);
 
   // Separate global brains from project-specific brains
@@ -174,6 +175,14 @@ async function main() {
   if (pendingNotifs.length) {
     sections.push('## Pending Alerts (' + pendingNotifs.length + ')\n' +
       pendingNotifs.slice(0, 5).map(n => `- [${n.type || 'alert'}] ${n.title || n.message}: ${(n.body || n.message || '').substring(0, 80)}`).join('\n'));
+  }
+
+  // Brain health check — warn if stagnant or slow
+  if (brainHealth && brainHealth.status !== 'healthy') {
+    sections.push(`## Brain Health: ${brainHealth.status.toUpperCase()}\n` +
+      (brainHealth.warnings || []).map(w => `- ${w}`).join('\n') +
+      `\nLearnings this week: ${brainHealth.weekly_growth} | Total: ${brainHealth.total_learnings}`
+    );
   }
 
   // Quick command presets
